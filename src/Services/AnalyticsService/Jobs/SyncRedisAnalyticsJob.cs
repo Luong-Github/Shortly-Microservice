@@ -20,7 +20,7 @@ namespace AnalyticsService.Jobs
         {
             var db = _redis.GetDatabase();
             var redisKeys = _redis.GetServer("localhost", 6379).Keys(pattern: "analytics:*").ToList();
-
+            
             if (!redisKeys.Any()) return;
 
             var analyticsList = new List<ClickRecord>();

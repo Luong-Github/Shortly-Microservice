@@ -1,5 +1,6 @@
 ﻿using Shared.Domain.Abstractions;
 using Shared.Domain.Abstractions.IEntites;
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace UrlService.Models
@@ -11,6 +12,6 @@ namespace UrlService.Models
         [Required]
         public string ShortCode { get; set; } = string.Empty;
 
-        public DateTime ExpirationDate { get; set; }
+        public DateTimeOffset ExpirationDate { get; set; }
     }
 }

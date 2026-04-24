@@ -1,0 +1,154 @@
+services:
+  # ===== YOUR APP =====
+  urlservice:
+    build: .
+    container_name: urlshortener-app
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__UrlDbString=Server=sqlserver;Initial Catalog=UrlShortener;User Id=sa;Password=SqlServer@123!;Encrypt=false;TrustServerCertificate=true
+      - Cache__RedisConnection=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - Jaeger__AgentHost=jaeger
+      - Jaeger__AgentPort=6831
+      - Seq__ServerUrl=http://seq:5341
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+      jaeger:
+        condition: service_started
+      seq:
+        condition: service_started
+    networks:
+      - urlshortener
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===== DATABASES =====
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: urlshortener-db
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=SqlServer@123!
+      - MSSQL_PID=Developer
+    volumes:
+      - sqldata:/var/opt/mssql
+    networks:
+      - urlshortener
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "SqlServer@123!", "-C", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: urlshortener-cache
+    ports:
+      - "6379:6379"
+    networks:
+      - urlshortener
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ===== MESSAGE QUEUE =====
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: urlshortener-mq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - urlshortener
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ===== OBSERVABILITY: TRACING =====
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: urlshortener-tracing
+    ports:
+      - "16686:16686"
+      - "6831:6831/udp"
+      - "14268:14268"
+    networks:
+      - urlshortener
+
+  # ===== OBSERVABILITY: LOGS =====
+  seq:
+    image: datalust/seq:latest
+    container_name: urlshortener-logs
+    ports:
+      - "5341:5341"
+    environment:
+      - ACCEPT_EULA=Y
+      - "SEQ_FIRSTRUN_ADMINPASSWORD=SeqAdmin@123"
+    volumes:
+      - seq_data:/data
+    networks:
+      - urlshortener
+
+  # ===== OPTIONAL: METRICS =====
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: urlshortener-metrics
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - urlshortener
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: urlshortener-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - urlshortener
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  sqldata:
+  rabbitmq_data:
+  seq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  urlshortener:
+    driver: bridge

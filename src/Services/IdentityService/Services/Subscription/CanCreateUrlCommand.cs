@@ -33,7 +33,7 @@ namespace IdentityService.Services.Subscription
             if (createdUrls >= plan.UrlLimit)
             {
                 // Charge for extra URLs
-                await _mediator.Send(new RecordUsageCommand() { TenantId = request.TenantId, Feature = "ExtraURLs", Quantity = 1, CostPerUnit = 0.05m})
+                await _mediator.Send(new RecordUsageCommand() { TenantId = request.TenantId, Feature = "ExtraURLs", Quantity = 1, CostPerUnit = 0.05m });
             }
 
             return true;

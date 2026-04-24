@@ -1,5 +1,6 @@
 using ApiGateway.Middlewares;
 using AspNetCoreRateLimit;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Ocelot.DependencyInjection;
@@ -17,6 +18,19 @@ builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounte
 builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
 
+// Register SecretsManager
+var secretsManager = new SecretsManager(builder.Configuration);
+builder.Services.AddSingleton(secretsManager);
+
+// Load JWT configuration from secrets
+var jwtKey = await secretsManager.GetSecretAsync("Jwt:Key");
+var jwtIssuer = await secretsManager.GetSecretAsync("Jwt:Issuer");
+var jwtAudience = await secretsManager.GetSecretAsync("Jwt:Audiences:0");
+
+if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer))
+{
+    throw new InvalidOperationException("JWT configuration (Key, Issuer) is missing. Configure via AWS Secrets Manager or appsettings.Development.json");
+}
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer("Bearer",
@@ -30,9 +44,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                  ValidateAudience = true,
                  ValidateLifetime = true,
                  ValidateIssuerSigningKey = true,
-                 ValidIssuer = "http://localhost:5001",
-                 ValidAudience = "urlshortent_api",
-                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("tQkM8cZXgXP1GK90841hBaoHIDoEwtud"))
+                 ValidIssuer = jwtIssuer,
+                 ValidAudience = jwtAudience ?? "urlshortent_api",
+                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
              };
          }
     );

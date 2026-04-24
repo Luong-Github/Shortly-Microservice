@@ -4,6 +4,7 @@ using AnalyticsService.Hubs;
 using AnalyticsService.Middlewares;
 using AnalyticsService.Repositories;
 using AnalyticsService.Services;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -14,7 +15,6 @@ using Quartz;
 using Quartz.Impl;
 using Quartz.Spi;
 using AnalyticsService.Jobs;
-using Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,9 +25,23 @@ builder.Services.AddDbContext<AppAnalyticsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("AppAnalyticsDb"));
 });
 
-// Confiugre REdis
+// Configure Redis
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
+
+// Register SecretsManager
+var secretsManager = new SecretsManager(builder.Configuration);
+builder.Services.AddSingleton(secretsManager);
+
+// Load JWT configuration from secrets
+var jwtKey = await secretsManager.GetSecretAsync("Jwt:Key");
+var jwtIssuer = await secretsManager.GetSecretAsync("Jwt:Issuer");
+var jwtAudience = await secretsManager.GetSecretAsync("Jwt:Audiences:0");
+
+if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer))
+{
+    throw new InvalidOperationException("JWT configuration (Key, Issuer) is missing. Configure via AWS Secrets Manager or appsettings.Development.json");
+}
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(
     options =>
@@ -40,9 +54,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer = "http://localhost:5001",
-            ValidAudience = "urlshortent_api",
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("tQkM8cZXgXP1GK90841hBaoHIDoEwtud"))
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience ?? "urlshortent_api",
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
         };
     });
 // Register MediatR

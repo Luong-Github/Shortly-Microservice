@@ -4,89 +4,37 @@ using IdentityService.Data;
 using IdentityService.Middleware;
 using IdentityService.Models;
 using IdentityService.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using IdentityService.Authentication;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using System.Reflection;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Configure database
 builder.Services.AddDbContext<AppIdentityDbContext>(
-        options =>
-        {
-            options.UseSqlServer(builder.Configuration.GetConnectionString("IdentityDB"));
-        }
-    );
+    options => options.UseSqlServer(builder.Configuration.GetConnectionString("IdentityDB"))
+);
 
-builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
-    .AddEntityFrameworkStores<AppIdentityDbContext>()
-    .AddDefaultTokenProviders();
+// Register infrastructure services
+var secretsManager = new SecretsManager(builder.Configuration);
+builder.Services.AddSingleton(secretsManager);
 
+// Register business services
 builder.Services.AddScoped<JwtTokenGenerator>();
 builder.Services.AddScoped<IAffiliateService, AffiliateService>();
 builder.Services.AddScoped<IBillingService, BillingService>();
 builder.Services.AddScoped<IReferralService, ReferralService>();
 
-builder.Services.AddIdentityServer(options =>
-{
-    //options.IssuerUri = "null";
-    options.Authentication.CookieLifetime = TimeSpan.FromHours(2);
-
-    options.Events.RaiseErrorEvents = true;
-    options.Events.RaiseInformationEvents = true;
-    options.Events.RaiseFailureEvents = true;
-    options.Events.RaiseSuccessEvents = true;
-
-    // TODO: Remove this line in production.
-    options.KeyManagement.Enabled = false;  
-})
-    .AddInMemoryIdentityResources(IdentityServerConfig.GetResources())
-    .AddInMemoryApiScopes(IdentityServerConfig.ApiScopes)
-    .AddInMemoryApiResources(IdentityServerConfig.GetApis())
-    .AddInMemoryClients(IdentityServerConfig.Clients)
-    .AddAspNetIdentity<ApplicationUser>()
-    .AddDeveloperSigningCredential();
-
-builder.Services.AddCognitoIdentity();
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-   .AddJwtBearer(options =>
-   {
-       // Using SSO - AWS Congnito
-       //options.Authority = builder.Configuration["Jwt:Authority"];
-       //options.Audience = builder.Configuration["Jwt:Audience"];
-       //options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-       //{
-       //    RoleClaimType = "cognito:groups"  // Extract Cognito Groups as roles
-       //};
-
-       options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-       {
-           ValidateIssuer = true,
-           ValidateAudience = true,
-           ValidateLifetime = true,
-           ValidateIssuerSigningKey = true,
-           ValidIssuer = "http://localhost:5001",
-           ValidAudiences = ["urlshortent_api" , "analytics_api"],
-           IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("tQkM8cZXgXP1GK90841hBaoHIDoEwtud"))
-       };
-   });
-
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("AdminPolicy", policy => policy.RequireRole("Admin"));
-    options.AddPolicy("UserPolicy", policy => policy.RequireRole("User"));
-});
-
+// Register MediatR
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
 
+// Configure rate limiting
 builder.Services.Configure<IpRateLimitOptions>(options =>
 {
     options.GeneralRules = new List<RateLimitRule>
@@ -95,38 +43,62 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
         {
             Endpoint = "*",
             Limit = 1000,
-            Period = "1d" // 1000 requests per day
+            Period = "1d"
         }
     };
 });
-
 builder.Services.AddInMemoryRateLimiting();
 builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
 
+// Configure authentication based on configured mode
+var authMode = AuthenticationProviderConfig.GetActiveMode(builder.Configuration);
+var authBuilder = new AuthenticationBuilder(builder.Services, builder.Configuration, secretsManager);
+
+switch (authMode)
+{
+    case AuthenticationMode.IdentityServer:
+        await authBuilder.ConfigureIdentityServerModeAsync();
+        break;
+
+    case AuthenticationMode.Cognito:
+        await authBuilder.ConfigureCognitoModeAsync(includeServiceJwt: true);
+        break;
+
+    case AuthenticationMode.Hybrid:
+        await authBuilder.ConfigureHybridModeAsync();
+        break;
+
+    default:
+        throw new InvalidOperationException($"Unknown authentication mode: {authMode}");
+}
+
+// Add controllers and API docs
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
-
-app.UseIdentityServer();
-app.UseAuthorization();
-app.UseMiddleware<TenantMiddleware>();
-app.UseMiddleware<SubscriptionMiddleware>();
-app.UseIpRateLimiting();
-
-app.MapControllers();
-
-// Configure the HTTP request pipeline.
+// Configure HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// Apply authentication/authorization middleware based on mode
+authBuilder.UseConfiguredMiddleware(app, authMode);
+
+// Apply custom middleware
+app.UseMiddleware<TenantMiddleware>();
+app.UseMiddleware<SubscriptionMiddleware>();
+app.UseIpRateLimiting();
+
+// Map endpoints
+app.MapControllers();
+
+// HTTPS redirect
 app.UseHttpsRedirection();
+
+// Log configured auth mode
+Console.WriteLine($"✓ Identity Service started with authentication mode: {authMode}");
 
 app.Run();

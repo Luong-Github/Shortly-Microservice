@@ -20,9 +20,9 @@ namespace UrlService.Controllers
         private readonly IUrlRepository _urlRepository;
         private readonly UrlShorteningService _urlShorteningService;
         private readonly IMediator _mediator;
-        private readonly ClickEventPublisher _clickEventPublisher;
+        private readonly IClickEventPublisher _clickEventPublisher;
 
-        public UrlController(IUrlRepository urlRepository, UrlShorteningService urlShorteningService, IMediator mediator, ClickEventPublisher clickEventPublisher)
+        public UrlController(IUrlRepository urlRepository, UrlShorteningService urlShorteningService, IMediator mediator, IClickEventPublisher clickEventPublisher)
         {
             _urlRepository = urlRepository;
             _urlShorteningService = urlShorteningService;
@@ -51,18 +51,12 @@ namespace UrlService.Controllers
 
             if (originalUrl == null) return NotFound();
 
-            /// track click event
-            //var client = new HttpClient();
-            //await client.PostAsJsonAsync("http://localhost:5004/api/analytics/track", new 
-            //{
-            //    ShortCode = shortCode,
-            //    UserId = User.Identity?.Name,
-            //    IPAddress = Request.HttpContext.Connection.RemoteIpAddress.ToString(),
-            //    UserAgent = Request.Headers["User-Agent"].ToString(),
-            //    CreatedAt = DateTimeOffset.Now
-            //});
-
-            _clickEventPublisher.PublishClickEvent(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, shortCode);
+            // Track click event asynchronously (fire-and-forget to not block HTTP redirect)
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var ipAddress = Request.HttpContext.Connection.RemoteIpAddress?.ToString();
+            var userAgent = Request.Headers["User-Agent"].ToString();
+            
+            _ = _clickEventPublisher.PublishClickEventAsync(userId, shortCode, ipAddress, userAgent);
 
             return Redirect(originalUrl);
         }
