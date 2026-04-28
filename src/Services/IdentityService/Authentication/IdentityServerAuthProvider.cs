@@ -65,7 +65,7 @@ public class IdentityServerAuthProvider
         .AddInMemoryApiResources(IdentityServerConfig.GetApis())
         .AddInMemoryClients(IdentityServerConfig.Clients)
         .AddAspNetIdentity<ApplicationUser>()
-        .AddDeveloperSigningCredential(); // Use developer cert in development
+        .AddDeveloperSigningCredential(persistKey: false); // Avoid writing tempkey.jwk in container
 
         return this;
     }

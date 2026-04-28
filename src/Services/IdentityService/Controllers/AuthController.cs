@@ -22,23 +22,43 @@ namespace IdentityService.Controllers
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IConfiguration _config;
         private readonly IMediator _mediator;
+        private readonly IdentityService.Data.AppIdentityDbContext _dbContext;
 
-        public AuthController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, IConfiguration config, IMediator mediator)
+        public AuthController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, IConfiguration config, IMediator mediator, IdentityService.Data.AppIdentityDbContext dbContext)
         {
             _userManager = userManager;
             _signInManager = signInManager;
             _config = config;
             _mediator = mediator;
+            _dbContext = dbContext;
         }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequestModel model)
         {
+            var host = HttpContext.Request.Host.Host;
+            var tenant = _dbContext.Tenants.FirstOrDefault(t => t.Domain == host);
+
+            if (tenant == null)
+            {
+                tenant = new IdentityService.Entities.Tenant
+                {
+                    Id = System.Guid.NewGuid(),
+                    Name = "Local Development",
+                    Domain = host,
+                    ConnectionString = _config.GetConnectionString("IdentityDB") ?? string.Empty
+                };
+
+                _dbContext.Tenants.Add(tenant);
+                await _dbContext.SaveChangesAsync();
+            }
+
             var user = new ApplicationUser
             {
                 UserName = model.Email,
                 Email = model.Email,
-                FullName = model.FullName
+                FullName = model.FullName,
+                TenantId = tenant.Id
             };
 
             var result = await _userManager.CreateAsync(user, model.Password);
@@ -57,16 +77,17 @@ namespace IdentityService.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestModel model)
         {
-            string token = await _mediator.Send(new LoginUserCommand(model.Email, model.Password, "your-domain"));
+            var host = HttpContext.Request.Host.Host;
+            string token = await _mediator.Send(new LoginUserCommand(model.Email, model.Password, host));
             return Ok(new {token});
         }
 
         private string GenerateJwtToken(ApplicationUser user) {
+            var audience = _config["Jwt:Audiences:0"] ?? "urlshortent_api";
 
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id),
-                new Claim(JwtRegisteredClaimNames.Aud, "urlshortent_api")
+                new Claim(ClaimTypes.NameIdentifier, user.Id)
             };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
@@ -74,7 +95,7 @@ namespace IdentityService.Controllers
 
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"],
-                audience: _config["Jwt:Audience"],
+                audience: audience,
                 claims : claims,
                 expires: DateTime.Now.AddMinutes(5),
                 signingCredentials: creds

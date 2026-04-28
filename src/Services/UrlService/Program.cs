@@ -47,10 +47,11 @@ builder.Host.UseSerilog();
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 
-builder.Services.AddDbContext<UrlDbContext>(options =>
+builder.Services.AddDbContextFactory<UrlDbContext>(options =>
 {
     options.UseSqlServer(builder.Configuration.GetConnectionString("UrlDbString"));
 });
+builder.Services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<UrlDbContext>>().CreateDbContext());
 
 // Configure multi-tier URL storage (Development, Production, Enterprise, Archive)
 var storageMode = builder.Configuration.GetValue<string>("UrlStorage:Mode") ?? "Development";

@@ -10,6 +10,11 @@ namespace UrlService.Services.UrlShortening.Commands
     {
         public string OriginalUrl { get; set; } = string.Empty;
         public string UserId { get; set; } = string.Empty;
+        
+        public ShortenUrlCommand()
+        {
+        }
+
         public ShortenUrlCommand(string originalUrl, string userId)
         {
             OriginalUrl = originalUrl;

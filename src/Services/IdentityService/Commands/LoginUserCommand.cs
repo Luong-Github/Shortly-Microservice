@@ -37,8 +37,13 @@ namespace IdentityService.Commands
 
         public async Task<string> Handle(LoginUserCommand request, CancellationToken cancellationToken)
         {
-            var tenant = await _mediator.Send(new GetTenantAsyncQuery() { Domain = request.Domain });
-            if (tenant == null) return null;
+            if (!string.IsNullOrWhiteSpace(request.Domain) &&
+                request.Domain != "localhost" &&
+                request.Domain != "127.0.0.1")
+            {
+                var tenant = await _mediator.Send(new GetTenantAsyncQuery() { Domain = request.Domain });
+                if (tenant == null) return null;
+            }
 
             var user = await _userManager.FindByEmailAsync(request.Email);
             if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password)) 

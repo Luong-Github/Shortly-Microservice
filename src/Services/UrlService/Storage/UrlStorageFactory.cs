@@ -184,8 +184,14 @@ public class UrlStorageFactory
 
         _logger.LogInformation($"Loaded storage config: Mode={storageMode}, TTL={cacheTtlMinutes}min, WriteThrough={writeThrough}");
 
-        // Parse the storage mode string to enum
-        var modeEnum = Enum.Parse<UrlStorageMode>(storageMode);
+        var modeEnum = storageMode switch
+        {
+            "Development" => UrlStorageMode.SqlServer,
+            "Production" => UrlStorageMode.RedisCached,
+            "Enterprise" => UrlStorageMode.DynamoDb,
+            "Archive" => UrlStorageMode.DynamoDb,
+            _ => throw new InvalidOperationException($"Unknown storage mode: {storageMode}")
+        };
 
         return new UrlStorageConfiguration
         {
@@ -196,6 +202,8 @@ public class UrlStorageFactory
                 CacheTtlMinutes = cacheTtlMinutes,
                 EnableRedisWriteThrough = writeThrough,
                 DynamoDbTableName = section.GetValue<string>("TableName") ?? "url_shortcuts",
+                SqlConnectionString = section.GetSection("SqlServer").GetValue<string>("ConnectionString"),
+                RedisConnectionString = section.GetSection("Redis").GetValue<string>("ConnectionString"),
             }
         };
     }

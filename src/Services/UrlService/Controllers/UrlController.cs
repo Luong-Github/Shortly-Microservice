@@ -40,6 +40,7 @@ namespace UrlService.Controllers
                 return Unauthorized();
             }
 
+            command.UserId = userId;
             string shortCode = await _mediator.Send(command);
             return Ok(new {shortCode});
         }

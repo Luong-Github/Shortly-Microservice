@@ -8,20 +8,18 @@ namespace IdentityService.Middleware
     public class SubscriptionMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly IMediator _mediator;
 
-        public SubscriptionMiddleware(RequestDelegate next, IMediator mediator)
+        public SubscriptionMiddleware(RequestDelegate next)
         {
             _next = next;
-            _mediator = mediator;
         }
 
-        public async Task Invoke(HttpContext context)
+        public async Task Invoke(HttpContext context, IMediator mediator)
         {
             var tenant = context.Items["Tenant"] as Tenant;
             if (tenant != null)
             {
-                var subscription = await _mediator.Send(new GetActiveSubscriptionQuery() { TenantId = tenant.Id});
+                var subscription = await mediator.Send(new GetActiveSubscriptionQuery() { TenantId = tenant.Id});
                 if (subscription == null || subscription.PaymentStatus != "Paid")
                 {
                     context.Response.StatusCode = 402; // Payment Required

@@ -15,6 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
 
 // Configure database
 builder.Services.AddDbContext<AppIdentityDbContext>(
@@ -49,6 +51,7 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
 });
 builder.Services.AddInMemoryRateLimiting();
 builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 
 // Configure authentication based on configured mode
 var authMode = AuthenticationProviderConfig.GetActiveMode(builder.Configuration);
@@ -76,6 +79,17 @@ switch (authMode)
 builder.Services.AddControllers();
 
 var app = builder.Build();
+
+try
+{
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>();
+    await dbContext.Database.EnsureCreatedAsync();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[INIT ERROR] Identity DB initialization failed: {ex}");
+}
 
 // Configure HTTP request pipeline
 if (app.Environment.IsDevelopment())

@@ -18,21 +18,21 @@ namespace IdentityService.Services
         {
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configurateion["Jwt:Key"]));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var audience = _configurateion["Jwt:Audiences:0"] ?? "urlshortent_api";
 
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, userId),
                 new Claim(JwtRegisteredClaimNames.Sub, userId),
                 new Claim(JwtRegisteredClaimNames.Email, email),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(JwtRegisteredClaimNames.Aud, "urlshortent_api")
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
             claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 
             var token = new JwtSecurityToken(
                 _configurateion["Jwt:Issuer"],
-                _configurateion["Jwt:Issuer"],
+                audience,
                 claims,
                 expires: DateTime.Now.AddMinutes(5),
                 signingCredentials: creds

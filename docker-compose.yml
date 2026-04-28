@@ -1,16 +1,73 @@
 services:
   # ===== YOUR APP =====
+  apigateway:
+    build:
+      context: .
+      dockerfile: src/Gateways/ApiGateway/Dockerfile
+    container_name: urlshortener-gateway
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - Jwt__Key=this-is-a-development-key-min-32-chars-long
+      - Jwt__Issuer=http://localhost:5001
+      - Jwt__Audiences__0=urlshortent_api
+    depends_on:
+      identityservice:
+        condition: service_started
+      urlservice:
+        condition: service_started
+    networks:
+      - urlshortener
+
+  identityservice:
+    build:
+      context: .
+      dockerfile: src/Services/IdentityService/Dockerfile
+    container_name: urlshortener-identity
+    ports:
+      - "5001:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__IdentityDB=Server=sqlserver;Initial Catalog=IdentityDB;User Id=sa;Password=SqlServer@123!;Encrypt=false;TrustServerCertificate=true
+      - Jwt__Key=this-is-a-development-key-min-32-chars-long
+      - Jwt__Issuer=http://localhost:5001
+      - Jwt__Audiences__0=urlshortent_api
+      - Jwt__Audiences__1=analytics_api
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    networks:
+      - urlshortener
+
   urlservice:
     build: .
     container_name: urlshortener-app
     ports:
-      - "8080:8080"
+      - "5002:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__UrlDbString=Server=sqlserver;Initial Catalog=UrlShortener;User Id=sa;Password=SqlServer@123!;Encrypt=false;TrustServerCertificate=true
+      - Jwt__Key=this-is-a-development-key-min-32-chars-long
+      - Jwt__Issuer=http://localhost:5001
+      - Jwt__Audiences__0=urlshortent_api
       - Cache__RedisConnection=redis:6379
+      - UrlStorage__Mode=Production
+      - UrlStorage__Redis__ConnectionString=redis:6379
+      - UrlStorage__SqlServer__ConnectionString=Server=sqlserver;Initial Catalog=UrlShortener;User Id=sa;Password=SqlServer@123!;Encrypt=false;TrustServerCertificate=true
       - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
       - Jaeger__AgentHost=jaeger
       - Jaeger__AgentPort=6831
       - Seq__ServerUrl=http://seq:5341

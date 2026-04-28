@@ -6,18 +6,16 @@ namespace IdentityService.Middleware
     public class TenantMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly IMediator _mediator;
 
-        public TenantMiddleware(RequestDelegate next, IMediator mediator)
+        public TenantMiddleware(RequestDelegate next)
         {
             _next = next;
-            _mediator = mediator;
         }
 
-        public async Task Invoke(HttpContext context)
+        public async Task Invoke(HttpContext context, IMediator mediator)
         {
             string host = context.Request.Host.Value;
-            var tenant = await _mediator.Send(new GetTenantAsyncQuery() { Domain = host });
+            var tenant = await mediator.Send(new GetTenantAsyncQuery() { Domain = host });
 
             if (tenant != null)
             {

@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using IdentityService.Events;
 using System.Text.Json;
 using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace IdentityService.Events
 {
@@ -23,28 +25,54 @@ namespace IdentityService.Events
 
     public class UserLoggedInEventHandler : INotificationHandler<UserLoggedInEvent>
     {
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<UserLoggedInEventHandler> _logger;
+
+        public UserLoggedInEventHandler(IConfiguration configuration, ILogger<UserLoggedInEventHandler> logger)
+        {
+            _configuration = configuration;
+            _logger = logger;
+        }
+
         public Task Handle(UserLoggedInEvent notification, CancellationToken cancellationToken)
         {
-            var factory = new ConnectionFactory { HostName = "localhost" };
-            using var connection = factory.CreateConnection();
-            using var channel = connection.CreateModel();
+            var rabbitMqHost = _configuration["RabbitMQ:Host"] ?? "localhost";
+            var rabbitMqPort = int.TryParse(_configuration["RabbitMQ:Port"], out var configuredPort) ? configuredPort : 5672;
+            var rabbitMqUser = _configuration["RabbitMQ:Username"] ?? "guest";
+            var rabbitMqPassword = _configuration["RabbitMQ:Password"] ?? "guest";
 
-            channel.QueueDeclare(queue: "user-logged-in",
-                                     durable: false,
-                                     exclusive: false,
-                                     autoDelete: false,
-                                     arguments: null);
+            try
+            {
+                var factory = new ConnectionFactory
+                {
+                    HostName = rabbitMqHost,
+                    Port = rabbitMqPort,
+                    UserName = rabbitMqUser,
+                    Password = rabbitMqPassword
+                };
 
-            var message = JsonSerializer.Serialize(notification);
+                using var connection = factory.CreateConnection();
+                using var channel = connection.CreateModel();
 
-            var body = Encoding.UTF8.GetBytes(message);
+                channel.QueueDeclare(queue: "user-logged-in",
+                                         durable: false,
+                                         exclusive: false,
+                                         autoDelete: false,
+                                         arguments: null);
 
-            channel.BasicPublish(exchange: "",
-                                 routingKey: "user-logged-in",
-                                 basicProperties: null,
-                                 body: body);
+                var message = JsonSerializer.Serialize(notification);
+                var body = Encoding.UTF8.GetBytes(message);
 
-            // send email
+                channel.BasicPublish(exchange: "",
+                                     routingKey: "user-logged-in",
+                                     basicProperties: null,
+                                     body: body);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish user login event to RabbitMQ");
+            }
+
             return Task.CompletedTask;
         }
     }
